@@ -3,11 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { PaymentsController } from './payments.controller';
 import { PaymentsService } from './payments.service';
 import { Payment } from './entities/payment.entity';
+import { Debt } from '@/debts/entities/debt.entity';
 import { DebtsModule } from '@/debts/debts.module';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([Payment]),
+    TypeOrmModule.forFeature([Payment, Debt]),
     forwardRef(() => DebtsModule),
   ],
   controllers: [PaymentsController],

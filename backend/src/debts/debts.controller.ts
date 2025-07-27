@@ -101,9 +101,10 @@ export class DebtsController {
   @ApiResponse({ status: HttpStatus.OK, description: 'Payoff projection calculated successfully' })
   async getProjection(
     @Param('id', ParseUUIDPipe) id: string,
-    @Query('monthlyPayment') monthlyPayment: number,
     @CurrentUser() user: User,
+    @Query('monthlyPayment') monthlyPayment?: string,
   ) {
-    return this.debtsService.calculatePayoffProjection(id, user.id, monthlyPayment);
+    const monthlyPaymentNumber = monthlyPayment ? parseFloat(monthlyPayment) : undefined;
+    return this.debtsService.calculatePayoffProjection(id, user.id, monthlyPaymentNumber);
   }
 }

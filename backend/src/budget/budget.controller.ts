@@ -46,9 +46,10 @@ export class BudgetController {
   @ApiResponse({ status: HttpStatus.OK, description: 'Budget history retrieved successfully' })
   async getBudgetHistory(
     @CurrentUser() user: User,
-    @Query('months', new ParseIntPipe({ optional: true })) months?: number,
+    @Query('months') months?: string,
   ) {
-    return this.budgetService.getBudgetHistory(user.id, months);
+    const monthsNumber = months ? parseInt(months, 10) : undefined;
+    return this.budgetService.getBudgetHistory(user.id, monthsNumber);
   }
 
   @Get('analysis')
@@ -73,9 +74,11 @@ export class BudgetController {
   @ApiResponse({ status: HttpStatus.OK, description: 'Transactions retrieved successfully' })
   async getTransactions(
     @CurrentUser() user: User,
-    @Query('month', new ParseIntPipe({ optional: true })) month?: number,
-    @Query('year', new ParseIntPipe({ optional: true })) year?: number,
+    @Query('month') month?: string,
+    @Query('year') year?: string,
   ) {
-    return this.budgetService.getTransactions(user.id, month, year);
+    const monthNumber = month ? parseInt(month, 10) : undefined;
+    const yearNumber = year ? parseInt(year, 10) : undefined;
+    return this.budgetService.getTransactions(user.id, monthNumber, yearNumber);
   }
 }

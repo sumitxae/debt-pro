@@ -26,6 +26,12 @@ export class CreateDebtDto {
   @ApiProperty({ example: 50000, description: 'Original debt amount' })
   originalAmount: number;
 
+  @IsOptional()
+  @IsNumber()
+  @Min(0.01)
+  @ApiProperty({ example: 45000, description: 'Current outstanding balance', required: false })
+  currentBalance?: number;
+
   @IsNumber()
   @Min(0)
   @Max(100)

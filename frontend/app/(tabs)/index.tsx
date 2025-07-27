@@ -7,11 +7,13 @@ import {
   TouchableOpacity,
   Dimensions,
   Alert,
+  ActivityIndicator,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
 import { useGetDebtsQuery, useGetBudgetQuery, useGetAnalyticsQuery } from '@/store/api/debtApi';
-import { Plus, DollarSign, Calendar, TrendingUp, Target } from 'lucide-react-native';
+import { formatCurrency } from '@/src/utils/currencyUtils';
+import { Plus, DollarSign, Calendar, TrendingUp, Target, User } from 'lucide-react-native';
 import { router } from 'expo-router';
 
 const { width } = Dimensions.get('window');
@@ -32,29 +34,51 @@ export default function DashboardScreen() {
   const dispatch = useDispatch();
   const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
   const { list: debts } = useSelector((state: RootState) => state.debts);
-  const { availableForDebt, monthlyIncome } = useSelector((state: RootState) => state.budget);
   
+  // Get user preferences for currency
+  const userCurrency = user?.preferences?.currency || 'USD';
+  
+  // Ensure userCurrency is a valid currency code
+  const validCurrency = userCurrency && typeof userCurrency === 'string' ? userCurrency : 'USD';
+  
+  // Get budget data from API instead of Redux state
   const { data: debtsData, isLoading: debtsLoading } = useGetDebtsQuery();
   const { data: budgetData, isLoading: budgetLoading } = useGetBudgetQuery();
   const { data: analyticsData, isLoading: analyticsLoading } = useGetAnalyticsQuery();
 
-  // Calculate dashboard metrics
-  const totalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
-  const totalOriginalDebt = debts.reduce((sum, debt) => sum + debt.originalAmount, 0);
+  // Handle potential errors
+  if (debtsLoading && budgetLoading && analyticsLoading) {
+    console.log('All data is still loading...');
+  }
+
+  // Ensure debtsData is an array and handle different response structures
+  const debtsArray = Array.isArray(debtsData) ? debtsData : [];
+
+  // Calculate dashboard metrics from real data with null checks
+  const totalDebt = debtsArray.reduce((sum, debt) => sum + (debt.balance || 0), 0);
+  
+  const totalOriginalDebt = debtsArray.reduce((sum, debt) => sum + (debt.originalAmount || 0), 0);
+  
   const debtPaidOff = totalOriginalDebt - totalDebt;
   const progressPercentage = totalOriginalDebt > 0 ? (debtPaidOff / totalOriginalDebt) * 100 : 0;
   
-  const activeDebts = debts.filter(debt => debt.status === 'active');
-  const nextDebtToPay = activeDebts.sort((a, b) => a.priority - b.priority)[0];
+  const activeDebts = debtsArray.filter(debt => debt.status === 'active');
+  const nextDebtToPay = activeDebts.sort((a, b) => (a.priority || 0) - (b.priority || 0))[0];
   
-  const monthlyPayments = debts.reduce((sum, debt) => sum + debt.minimumPayment, 0);
-  const debtToIncomeRatio = monthlyIncome > 0 ? (monthlyPayments / monthlyIncome) * 100 : 0;
+  const monthlyPayments = debtsArray.reduce((sum, debt) => sum + (debt.minimumPayment || 0), 0);
+  
+  const debtToIncomeRatio = (budgetData?.monthlyIncome || 0) > 0 ? (monthlyPayments / (budgetData?.monthlyIncome || 1)) * 100 : 0;
 
-  // Mock debt-free countdown (would come from projections in real app)
-  const projectedPayoffDate = analyticsData?.projectedPayoffDate || '2026-12-31';
+  // Real debt-free countdown from analytics
+  const projectedPayoffDate = analyticsData?.projectedPayoffDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
   const daysUntilDebtFree = Math.ceil(
     (new Date(projectedPayoffDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)
   );
+
+  // Calculate available for debt from budget data
+  const availableForDebt = budgetData ? 
+    (Number(budgetData.monthlyIncome) || 0) - Object.values(budgetData.expenses || {}).reduce((sum, exp) => sum + (Number(exp) || 0), 0) : 0;
+  const totalInterestSaved = Number(analyticsData?.totalInterestSaved) || 0;
 
   if (!isAuthenticated) {
     return (
@@ -73,17 +97,34 @@ export default function DashboardScreen() {
     );
   }
 
+  // Show loading state while data is being fetched
+  if (debtsLoading || budgetLoading || analyticsLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading your financial data...</Text>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
       {/* Header */}
       <View style={styles.header}>
         <View>
           <Text style={styles.greeting}>Good morning,</Text>
-          <Text style={styles.userName}>{user?.name || 'User'}</Text>
+          <Text style={styles.userName}>{user ? `${user.firstName} ${user.lastName}` : 'User'}</Text>
         </View>
-        <TouchableOpacity style={styles.addButton} onPress={() => router.push('/debts/add')}>
-          <Plus size={24} color={COLORS.white} />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.profileButton} onPress={() => router.push('/profile')}>
+            <User size={20} color={COLORS.text} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.addButton} onPress={() => router.push('/debts/add')}>
+            <Plus size={24} color={COLORS.white} />
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* Debt Overview Cards */}
@@ -93,7 +134,7 @@ export default function DashboardScreen() {
             <Text style={styles.cardTitle}>Total Debt</Text>
             <DollarSign size={20} color={COLORS.danger} />
           </View>
-          <Text style={styles.mainAmount}>${totalDebt.toLocaleString()}</Text>
+          <Text style={styles.mainAmount}>{formatCurrency(totalDebt, validCurrency)}</Text>
           <View style={styles.progressContainer}>
             <View style={styles.progressBar}>
               <View 
@@ -123,7 +164,7 @@ export default function DashboardScreen() {
             <Text style={styles.cardSubtitle}>This Month's Target</Text>
             <Target size={16} color={COLORS.primary} />
           </View>
-          <Text style={styles.progressAmount}>${monthlyPayments.toLocaleString()}</Text>
+          <Text style={styles.progressAmount}>{formatCurrency(monthlyPayments, validCurrency)}</Text>
           <Text style={styles.progressDescription}>Minimum payments due</Text>
         </View>
 
@@ -132,7 +173,7 @@ export default function DashboardScreen() {
             <Text style={styles.cardSubtitle}>Available for Debt</Text>
             <DollarSign size={16} color={COLORS.success} />
           </View>
-          <Text style={styles.progressAmount}>${availableForDebt.toLocaleString()}</Text>
+          <Text style={styles.progressAmount}>{formatCurrency(availableForDebt, validCurrency)}</Text>
           <Text style={styles.progressDescription}>After expenses</Text>
         </View>
       </View>
@@ -145,7 +186,7 @@ export default function DashboardScreen() {
             <TrendingUp size={20} color={COLORS.warning} />
           </View>
           <Text style={styles.debtName}>{nextDebtToPay.name}</Text>
-          <Text style={styles.debtBalance}>${nextDebtToPay.balance.toLocaleString()}</Text>
+          <Text style={styles.debtBalance}>{formatCurrency(nextDebtToPay.balance, validCurrency)}</Text>
           <View style={styles.debtProgress}>
             <View style={styles.progressBar}>
               <View 
@@ -224,7 +265,7 @@ export default function DashboardScreen() {
           
           <View style={styles.indicator}>
             <Text style={styles.indicatorValue}>
-              ${(totalDebt - debtPaidOff).toLocaleString()}
+              {formatCurrency(totalInterestSaved, validCurrency)}
             </Text>
             <Text style={styles.indicatorLabel}>Interest Saved</Text>
             <View style={[styles.healthBadge, { backgroundColor: COLORS.success }]}>
@@ -248,6 +289,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     padding: 24,
     paddingTop: 60,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  profileButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.lightGray,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   greeting: {
     fontSize: 16,
@@ -509,5 +563,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: COLORS.white,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginTop: 16,
   },
 });

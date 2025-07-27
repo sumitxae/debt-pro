@@ -13,6 +13,7 @@ import {
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
 import { useGetDebtsQuery, useDeleteDebtMutation, useRecordPaymentMutation } from '@/store/api/debtApi';
+import { formatCurrency } from '@/src/utils/currencyUtils';
 import { Plus, CreditCard, Trash2, DollarSign, Percent, Calendar, CreditCard as Edit } from 'lucide-react-native';
 import { router } from 'expo-router';
 
@@ -31,12 +32,18 @@ const COLORS = {
 };
 
 export default function DebtsScreen() {
-  const { list: debts } = useSelector((state: RootState) => state.debts);
+  const { data: debtsData, isLoading, refetch } = useGetDebtsQuery();
+  
+  // Get user preferences for currency
+  const user = useSelector((state: RootState) => state.auth.user);
+  const userCurrency = user?.preferences?.currency || 'USD';
+  
+  // Ensure debtsData is an array and handle different response structures
+  const debts = Array.isArray(debtsData) ? debtsData : [];
+  
   const [paymentModalVisible, setPaymentModalVisible] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<any>(null);
   const [paymentAmount, setPaymentAmount] = useState('');
-  
-  const { data: debtsData, isLoading, refetch } = useGetDebtsQuery();
   const [deleteDebt] = useDeleteDebtMutation();
   const [recordPayment] = useRecordPaymentMutation();
 
@@ -78,8 +85,8 @@ export default function DebtsScreen() {
       await recordPayment({
         debtId: selectedDebt.id,
         amount,
-        date: new Date().toISOString(),
-        method: 'manual',
+        paymentDate: new Date().toISOString(),
+        paymentType: 'manual',
       }).unwrap();
       
       setPaymentModalVisible(false);
@@ -117,7 +124,7 @@ export default function DebtsScreen() {
         <View>
           <Text style={styles.headerTitle}>Your Debts</Text>
           <Text style={styles.headerSubtitle}>
-            {activeDebts.length} active • ${activeDebts.reduce((sum, debt) => sum + debt.balance, 0).toLocaleString()} total
+            {activeDebts.length} active • {formatCurrency(activeDebts.reduce((sum, debt) => sum + debt.balance, 0), userCurrency)} total
           </Text>
         </View>
         <TouchableOpacity 
@@ -166,8 +173,8 @@ export default function DebtsScreen() {
                     </View>
 
                     <View style={styles.debtBalance}>
-                      <Text style={styles.currentBalance}>${debt.balance.toLocaleString()}</Text>
-                      <Text style={styles.originalAmount}>of ${debt.originalAmount.toLocaleString()}</Text>
+                      <Text style={styles.currentBalance}>{formatCurrency(debt.balance, userCurrency)}</Text>
+                      <Text style={styles.originalAmount}>of {formatCurrency(debt.originalAmount, userCurrency)}</Text>
                     </View>
 
                     <View style={styles.progressContainer}>
@@ -188,7 +195,7 @@ export default function DebtsScreen() {
                       <View style={styles.metric}>
                         <DollarSign size={14} color={COLORS.textLight} />
                         <Text style={styles.metricLabel}>Min Payment</Text>
-                        <Text style={styles.metricValue}>${debt.minimumPayment}</Text>
+                        <Text style={styles.metricValue}>{formatCurrency(debt.minimumPayment, userCurrency)}</Text>
                       </View>
                       <View style={styles.metric}>
                         <Percent size={14} color={COLORS.textLight} />
@@ -276,14 +283,19 @@ export default function DebtsScreen() {
             
             <View style={styles.inputContainer}>
               <Text style={styles.inputLabel}>Payment Amount</Text>
-              <TextInput
-                style={styles.paymentInput}
-                value={paymentAmount}
-                onChangeText={setPaymentAmount}
-                placeholder="0.00"
-                keyboardType="decimal-pad"
-                autoFocus
-              />
+              <View style={styles.paymentInputContainer}>
+                <Text style={styles.paymentCurrencySymbol}>
+                  {formatCurrency(0, userCurrency).replace('0.00', '').trim()}
+                </Text>
+                <TextInput
+                  style={styles.paymentInput}
+                  value={paymentAmount}
+                  onChangeText={setPaymentAmount}
+                  placeholder="0.00"
+                  keyboardType="decimal-pad"
+                  autoFocus
+                />
+              </View>
             </View>
 
             <View style={styles.modalActions}>
@@ -557,6 +569,18 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     marginBottom: 8,
   },
+  paymentInputContainer: {
+    position: 'relative',
+  },
+  paymentCurrencySymbol: {
+    position: 'absolute',
+    left: 16,
+    top: 16,
+    fontSize: 24,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    zIndex: 1,
+  },
   paymentInput: {
     fontSize: 24,
     fontWeight: 'bold',
@@ -565,6 +589,7 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
     borderRadius: 12,
     padding: 16,
+    paddingLeft: 50,
     textAlign: 'center',
   },
   modalActions: {

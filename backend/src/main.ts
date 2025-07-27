@@ -5,6 +5,8 @@ import { ConfigService } from '@nestjs/config';
 import { AppModule } from './app.module';
 import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { RequestIdMiddleware } from './common/middleware/request-id.middleware';
+import { CustomValidationPipe } from './common/pipes/validation.pipe';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -18,16 +20,14 @@ async function bootstrap() {
   app.enableCors({ origin: '*' });
 
   // Global pipes
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true,
-      forbidNonWhitelisted: true,
-      transform: true,
-      transformOptions: {
-        enableImplicitConversion: true,
-      },
-    }),
-  );
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: false,
+    transform: true,
+  }));
+
+  // Global middleware
+  app.use(RequestIdMiddleware);
 
   // Global filters
   app.useGlobalFilters(new AllExceptionsFilter());

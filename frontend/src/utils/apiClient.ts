@@ -121,12 +121,15 @@ class ApiClient {
 
       if (!response.ok) {
         if (response.status === 401) {
+          console.log('Received 401 error, attempting token refresh...');
           // Token expired, try to refresh
           const refreshed = await this.refreshToken();
           if (refreshed) {
+            console.log('Token refresh successful, retrying original request');
             // Retry the original request
             return this.makeRequest(endpoint, options);
           } else {
+            console.log('Token refresh failed, clearing tokens');
             // Refresh failed, clear tokens
             await this.clearTokens();
             throw new Error('Authentication failed');
@@ -134,6 +137,7 @@ class ApiClient {
         }
 
         const errorData = await response.json().catch(() => ({}));
+        console.log('API error response:', errorData);
         const errorMessage = Array.isArray(errorData.message) 
           ? errorData.message[0] 
           : errorData.message || `HTTP ${response.status}`;
@@ -158,9 +162,11 @@ class ApiClient {
     try {
       const refreshToken = await AsyncStorage.getItem(STORAGE_KEYS.REFRESH_TOKEN);
       if (!refreshToken) {
+        console.log('No refresh token found');
         return false;
       }
 
+      console.log('Attempting to refresh token...');
       const response = await fetch(`${this.baseURL}/auth/refresh`, {
         method: 'POST',
         headers: {
@@ -169,15 +175,24 @@ class ApiClient {
         body: JSON.stringify({ refreshToken }),
       });
 
+      console.log('Refresh response status:', response.status);
+
       if (response.ok) {
-        const data = await response.json();
+        const responseData = await response.json();
+        console.log('Refresh successful, storing new tokens');
+        
+        // The backend wraps responses in { success: true, data: {...}, timestamp: ... }
+        const tokens = responseData.data;
         await this.storeTokens({
-          accessToken: data.data.accessToken,
-          refreshToken: data.data.refreshToken,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
         });
         return true;
+      } else {
+        const errorData = await response.json().catch(() => ({}));
+        console.log('Refresh failed:', errorData);
+        return false;
       }
-      return false;
     } catch (error) {
       console.error('Error refreshing token:', error);
       return false;
@@ -197,19 +212,22 @@ class ApiClient {
     );
 
     console.log('ApiClient: Login response received:', response.success);
+    console.log('ApiClient: Login response data:', response.data);
 
+    // The backend wraps responses in { success: true, data: {...}, timestamp: ... }
+    const loginData = response.data;
     const tokens = {
-      accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken,
+      accessToken: loginData.accessToken,
+      refreshToken: loginData.refreshToken,
     };
 
     await this.storeTokens(tokens);
-    await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(response.data.user));
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(loginData.user));
 
     console.log('ApiClient: Tokens stored, returning user data');
 
     return {
-      user: response.data.user,
+      user: loginData.user,
       tokens,
     };
   }
@@ -229,16 +247,18 @@ class ApiClient {
       }
     );
 
+    // The backend wraps responses in { success: true, data: {...}, timestamp: ... }
+    const registerData = response.data;
     const tokens = {
-      accessToken: response.data.accessToken,
-      refreshToken: response.data.refreshToken,
+      accessToken: registerData.accessToken,
+      refreshToken: registerData.refreshToken,
     };
 
     await this.storeTokens(tokens);
-    await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(response.data.user));
+    await AsyncStorage.setItem(STORAGE_KEYS.USER_DATA, JSON.stringify(registerData.user));
 
     return {
-      user: response.data.user,
+      user: registerData.user,
       tokens,
     };
   }

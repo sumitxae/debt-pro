@@ -1,55 +1,49 @@
-import {
-  Controller,
-  Get,
-  Query,
-  UseGuards,
-  HttpStatus,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common';
 import { AnalyticsService } from './analytics.service';
-import { ProjectionQueryDto } from './dto/projection-query.dto';
-import { JwtAuthGuard } from '@/common/guards/jwt-auth.guard';
-import { CurrentUser } from '@/common/decorators/current-user.decorator';
-import { User } from '@/users/entities/user.entity';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 
-@ApiTags('Analytics')
 @Controller('analytics')
 @UseGuards(JwtAuthGuard)
-@ApiBearerAuth('JWT-auth')
 export class AnalyticsController {
   constructor(private readonly analyticsService: AnalyticsService) {}
 
-  @Get('projection')
-  @ApiOperation({ summary: 'Get debt payoff projections' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Debt projection calculated successfully' })
-  async getProjection(
-    @CurrentUser() user: User,
-    @Query() query: ProjectionQueryDto,
-  ) {
-    return this.analyticsService.calculateDebtProjection(user.id, query);
+  @Get('dashboard')
+  async getDashboardAnalytics(@Request() req) {
+    const userId = req.user.id;
+    return this.analyticsService.getDashboardAnalytics(userId);
   }
 
   @Get('progress')
-  @ApiOperation({ summary: 'Get user progress metrics' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'User progress retrieved successfully' })
-  async getProgress(@CurrentUser() user: User) {
-    return this.analyticsService.getUserProgress(user.id);
+  async getUserProgress(@Request() req) {
+    const userId = req.user.id;
+    return this.analyticsService.getUserProgress(userId);
   }
 
-  @Get('dashboard')
-  @ApiOperation({ summary: 'Get dashboard analytics' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Dashboard metrics retrieved successfully' })
-  async getDashboard(@CurrentUser() user: User) {
-    return this.analyticsService.getDashboardMetrics(user.id);
+  @Get('projection')
+  async getProjection(
+    @Request() req,
+    @Query('strategy') strategy: string = 'avalanche',
+    @Query('monthlyPayment') monthlyPayment: number,
+    @Query('extraPayment') extraPayment: number = 0,
+  ) {
+    const userId = req.user.id;
+    return this.analyticsService.getProjection(userId, {
+      strategy,
+      monthlyPayment: Number(monthlyPayment),
+      extraPayment: Number(extraPayment),
+    });
   }
 
   @Get('compare-strategies')
-  @ApiOperation({ summary: 'Compare debt payoff strategies' })
-  @ApiResponse({ status: HttpStatus.OK, description: 'Strategy comparison completed successfully' })
   async compareStrategies(
-    @CurrentUser() user: User,
-    @Query() query: Omit<ProjectionQueryDto, 'strategy'>,
+    @Request() req,
+    @Query('monthlyPayment') monthlyPayment: number,
+    @Query('extraPayment') extraPayment: number = 0,
   ) {
-    return this.analyticsService.comparePayoffStrategies(user.id, query);
+    const userId = req.user.id;
+    return this.analyticsService.compareStrategies(userId, {
+      monthlyPayment: Number(monthlyPayment),
+      extraPayment: Number(extraPayment),
+    });
   }
 }

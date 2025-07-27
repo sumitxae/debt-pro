@@ -183,8 +183,27 @@ export const authSlice = createSlice({
         state.isLoading = false;
         state.error = action.error.message || 'Preferences update failed';
       });
+
+    // Force Logout (for 401 errors)
+    builder
+      .addCase(forceLogout.fulfilled, (state) => {
+        state.user = null;
+        state.tokens = null;
+        state.isAuthenticated = false;
+        state.isLoading = false;
+        state.error = null;
+      });
   },
 });
 
 export const { clearError, setLoading } = authSlice.actions;
+
+// Action to force logout (for handling 401 errors)
+export const forceLogout = createAsyncThunk(
+  'auth/forceLogout',
+  async (): Promise<void> => {
+    // Clear any stored tokens
+    await authService.logout();
+  }
+);
 export default authSlice.reducer;

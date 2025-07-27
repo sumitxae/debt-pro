@@ -4,6 +4,7 @@ export interface Debt {
   id: string;
   name: string;
   balance: number;
+  currentBalance?: number; // Optional field from backend API
   originalAmount: number;
   minimumPayment: number;
   interestRate: number;

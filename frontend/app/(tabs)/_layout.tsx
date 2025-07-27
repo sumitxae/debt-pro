@@ -1,6 +1,6 @@
 import { Tabs } from 'expo-router';
 import { View, Text, StyleSheet } from 'react-native';
-import { Chrome as Home, CreditCard, Calculator, Trophy, ChartBar as BarChart3 } from 'lucide-react-native';
+import { Chrome as Home, CreditCard, Calculator, Trophy, ChartBar as BarChart3, User } from 'lucide-react-native';
 
 const COLORS = {
   primary: '#3498db',
@@ -74,6 +74,15 @@ export default function TabLayout() {
           title: 'Analytics',
           tabBarIcon: ({ size, color }) => (
             <BarChart3 size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="profile"
+        options={{
+          title: 'Profile',
+          tabBarIcon: ({ size, color }) => (
+            <User size={size} color={color} />
           ),
         }}
       />

@@ -1,61 +1,79 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Payment } from './entities/payment.entity';
+import { Debt, DebtStatus } from '../debts/entities/debt.entity';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 
 @Injectable()
 export class PaymentsService {
   constructor(
     @InjectRepository(Payment)
-    private paymentRepository: Repository<Payment>,
+    private readonly paymentRepository: Repository<Payment>,
+    @InjectRepository(Debt)
+    private readonly debtRepository: Repository<Debt>,
   ) {}
 
-  async create(createPaymentDto: CreatePaymentDto & { 
-    debtId: string; 
-    userId: string; 
-    principalAmount: number; 
-    interestAmount: number; 
-    remainingBalance: number;
-  }): Promise<Payment> {
-    const payment = this.paymentRepository.create({
-      ...createPaymentDto,
-      debt: { id: createPaymentDto.debtId },
-      user: { id: createPaymentDto.userId },
-      paymentDate: createPaymentDto.paymentDate || new Date(),
-    });
-
-    return this.paymentRepository.save(payment);
-  }
-
-  async findByUser(userId: string, limit?: number): Promise<Payment[]> {
-    const queryBuilder = this.paymentRepository
+  async getAllPayments(userId: string, limit?: number) {
+    const query = this.paymentRepository
       .createQueryBuilder('payment')
-      .leftJoinAndSelect('payment.debt', 'debt')
-      .leftJoin('payment.user', 'user')
-      .where('user.id = :userId', { userId })
+      .leftJoin('payment.debt', 'debt')
+      .where('debt.userId = :userId', { userId })
       .orderBy('payment.paymentDate', 'DESC');
 
     if (limit) {
-      queryBuilder.limit(limit);
+      query.limit(limit);
     }
 
-    return queryBuilder.getMany();
+    return query.getMany();
   }
 
-  async findByDebt(debtId: string): Promise<Payment[]> {
-    return this.paymentRepository.find({
-      where: { debt: { id: debtId } },
-      relations: ['debt'],
-      order: { paymentDate: 'DESC' },
-    });
+  async getPaymentStats(userId: string, months: number = 12) {
+    const payments = await this.paymentRepository
+      .createQueryBuilder('payment')
+      .leftJoin('payment.debt', 'debt')
+      .where('debt.userId = :userId', { userId })
+      .andWhere('payment.paymentDate >= :startDate', {
+        startDate: new Date(Date.now() - months * 30 * 24 * 60 * 60 * 1000),
+      })
+      .getMany();
+
+    const totalPaid = payments.reduce((sum, payment) => sum + payment.amount, 0);
+    const totalPrincipal = payments.reduce((sum, payment) => sum + payment.principalAmount, 0);
+    const totalInterest = payments.reduce((sum, payment) => sum + payment.interestAmount, 0);
+    const averageMonthlyPayment = payments.length > 0 ? totalPaid / months : 0;
+
+    return {
+      totalPaid: Math.round(totalPaid * 100) / 100,
+      totalPrincipal: Math.round(totalPrincipal * 100) / 100,
+      totalInterest: Math.round(totalInterest * 100) / 100,
+      averageMonthlyPayment: Math.round(averageMonthlyPayment * 100) / 100,
+      paymentCount: payments.length,
+      lastPaymentDate: payments.length > 0 ? payments[0].paymentDate.toISOString() : null,
+    };
   }
 
-  async findById(id: string, userId: string): Promise<Payment> {
-    const payment = await this.paymentRepository.findOne({
-      where: { id, user: { id: userId } },
-      relations: ['debt', 'user'],
-    });
+  async getMonthlyPayments(userId: string, year: number, month: number) {
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0);
+
+    return this.paymentRepository
+      .createQueryBuilder('payment')
+      .leftJoin('payment.debt', 'debt')
+      .where('debt.userId = :userId', { userId })
+      .andWhere('payment.paymentDate >= :startDate', { startDate })
+      .andWhere('payment.paymentDate <= :endDate', { endDate })
+      .orderBy('payment.paymentDate', 'DESC')
+      .getMany();
+  }
+
+  async getPaymentById(userId: string, id: string) {
+    const payment = await this.paymentRepository
+      .createQueryBuilder('payment')
+      .leftJoin('payment.debt', 'debt')
+      .where('payment.id = :id', { id })
+      .andWhere('debt.userId = :userId', { userId })
+      .getOne();
 
     if (!payment) {
       throw new NotFoundException('Payment not found');
@@ -64,69 +82,58 @@ export class PaymentsService {
     return payment;
   }
 
-  async getMonthlyPayments(userId: string, year: number, month: number): Promise<Payment[]> {
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0);
-
-    return this.paymentRepository.find({
-      where: {
-        user: { id: userId },
-        paymentDate: Between(startDate, endDate),
-      },
-      relations: ['debt'],
-      order: { paymentDate: 'DESC' },
-    });
-  }
-
-  async getPaymentStats(userId: string, months: number = 12) {
-    const startDate = new Date();
-    startDate.setMonth(startDate.getMonth() - months);
-
-    const payments = await this.paymentRepository
-      .createQueryBuilder('payment')
-      .leftJoin('payment.user', 'user')
-      .leftJoinAndSelect('payment.debt', 'debt')
-      .where('user.id = :userId', { userId })
-      .andWhere('payment.paymentDate >= :startDate', { startDate })
-      .orderBy('payment.paymentDate', 'ASC')
-      .getMany();
-
-    const totalAmount = payments.reduce((sum, payment) => sum + Number(payment.amount), 0);
-    const totalPrincipal = payments.reduce((sum, payment) => sum + Number(payment.principalAmount), 0);
-    const totalInterest = payments.reduce((sum, payment) => sum + Number(payment.interestAmount), 0);
-
-    // Group by month for trend analysis
-    const monthlyStats = {};
-    payments.forEach(payment => {
-      const monthKey = `${payment.paymentDate.getFullYear()}-${String(payment.paymentDate.getMonth() + 1).padStart(2, '0')}`;
-      if (!monthlyStats[monthKey]) {
-        monthlyStats[monthKey] = {
-          month: monthKey,
-          totalAmount: 0,
-          totalPrincipal: 0,
-          totalInterest: 0,
-          paymentCount: 0,
-        };
-      }
-      monthlyStats[monthKey].totalAmount += Number(payment.amount);
-      monthlyStats[monthKey].totalPrincipal += Number(payment.principalAmount);
-      monthlyStats[monthKey].totalInterest += Number(payment.interestAmount);
-      monthlyStats[monthKey].paymentCount += 1;
+  async recordPayment(userId: string, debtId: string, createPaymentDto: CreatePaymentDto) {
+    // Get debt to calculate interest and principal
+    const debt = await this.debtRepository.findOne({
+      where: { id: debtId, user: { id: userId } },
     });
 
-    return {
-      totalPayments: payments.length,
-      totalAmount: Math.round(totalAmount * 100) / 100,
-      totalPrincipal: Math.round(totalPrincipal * 100) / 100,
-      totalInterest: Math.round(totalInterest * 100) / 100,
-      averagePayment: payments.length > 0 ? Math.round((totalAmount / payments.length) * 100) / 100 : 0,
-      principalToInterestRatio: totalInterest > 0 ? Math.round((totalPrincipal / totalInterest) * 100) / 100 : 0,
-      monthlyBreakdown: Object.values(monthlyStats),
-    };
+    if (!debt) {
+      throw new NotFoundException('Debt not found');
+    }
+
+    // Calculate interest and principal portions
+    const monthlyInterestRate = Number(debt.interestRate) / 100 / 12;
+    const interestAmount = Number(debt.currentBalance) * monthlyInterestRate;
+    const principalAmount = Math.max(0, createPaymentDto.amount - interestAmount);
+    const remainingBalance = Math.max(0, Number(debt.currentBalance) - principalAmount);
+
+    // Create payment record
+    const payment = this.paymentRepository.create({
+      ...createPaymentDto,
+      debt: { id: debtId },
+      interestAmount: Math.round(interestAmount * 100) / 100,
+      principalAmount: Math.round(principalAmount * 100) / 100,
+      remainingBalance: Math.round(remainingBalance * 100) / 100,
+    });
+
+    const savedPayment = await this.paymentRepository.save(payment);
+
+    // Update debt balance
+    debt.currentBalance = remainingBalance;
+    if (remainingBalance <= 0) {
+      debt.status = DebtStatus.PAID_OFF;
+    }
+    await this.debtRepository.save(debt);
+
+    return savedPayment;
   }
 
-  async delete(id: string, userId: string): Promise<void> {
-    const payment = await this.findById(id, userId);
+  async deletePayment(userId: string, id: string) {
+    const payment = await this.getPaymentById(userId, id);
+    
+    // Revert debt balance
+    const debt = await this.debtRepository.findOne({
+      where: { id: payment.debt.id },
+    });
+
+    if (debt) {
+      debt.currentBalance += payment.principalAmount;
+      debt.status = DebtStatus.ACTIVE;
+      await this.debtRepository.save(debt);
+    }
+
     await this.paymentRepository.remove(payment);
+    return { message: 'Payment deleted successfully' };
   }
 }

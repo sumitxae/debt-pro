@@ -3,7 +3,9 @@ import {
   ConflictException,
   UnauthorizedException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
+import { createAuthException, createConflictException } from '@/common/exceptions/custom-exceptions';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -14,6 +16,8 @@ import { User } from '@/users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
@@ -24,7 +28,7 @@ export class AuthService {
     // Check if user exists
     const existingUser = await this.usersService.findByEmail(createUserDto.email);
     if (existingUser) {
-      throw new ConflictException('User with this email already exists');
+      throw createConflictException('AUTH_USER_ALREADY_EXISTS');
     }
 
     // Hash password
@@ -67,12 +71,12 @@ export class AuthService {
     const user = await this.usersService.findByEmail(email);
     
     if (!user || !user.isActive) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw createAuthException('AUTH_INVALID_CREDENTIALS');
     }
 
     const isPasswordValid = await bcrypt.compare(password, user.password);
     if (!isPasswordValid) {
-      throw new UnauthorizedException('Invalid credentials');
+      throw createAuthException('AUTH_INVALID_CREDENTIALS');
     }
 
     return user;
@@ -80,15 +84,28 @@ export class AuthService {
 
   async refreshToken(refreshToken: string) {
     try {
+      this.logger.debug('Attempting to refresh access token');
+      
       const payload = this.jwtService.verify(refreshToken);
+      this.logger.debug(`Refresh token verified for user ID: ${payload.sub}`);
+      
       const user = await this.usersService.findById(payload.sub);
       
       if (!user || !user.isActive) {
+        this.logger.warn(`Token refresh failed: User not found or inactive for ID ${payload.sub}`);
         throw new UnauthorizedException('Invalid refresh token');
       }
 
-      return this.generateTokens(user);
+      const tokens = await this.generateTokens(user);
+      this.logger.debug(`Token refresh successful for user: ${user.email}`);
+      
+      return tokens;
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      
+      this.logger.error(`Token refresh error: ${error.message}`, error.stack);
       throw new UnauthorizedException('Invalid refresh token');
     }
   }

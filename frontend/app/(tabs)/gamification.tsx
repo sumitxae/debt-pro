@@ -5,9 +5,9 @@ import {
   StyleSheet,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
-import { useSelector } from 'react-redux';
-import { RootState } from '@/store';
+import { useGetGamificationProfileQuery, useGetBadgesQuery, useGetDebtsQuery } from '@/store/api/debtApi';
 import { Trophy, Award, Target, TrendingUp, Star } from 'lucide-react-native';
 
 const { width } = Dimensions.get('window');
@@ -112,16 +112,62 @@ const mockMilestones = [
 ];
 
 export default function GamificationScreen() {
-  const { list: debts } = useSelector((state: RootState) => state.debts);
+  try {
+      const { data: gamificationProfile, isLoading: profileLoading, error: profileError } = useGetGamificationProfileQuery();
+  const { data: badgesData, isLoading: badgesLoading, error: badgesError } = useGetBadgesQuery();
+  const { data: debtsData, isLoading: debtsLoading, error: debtsError } = useGetDebtsQuery();
   
-  // Mock calculations - would come from backend
-  const totalPointsEarned = 2750;
-  const currentLevel = Math.floor(totalPointsEarned / 1000) + 1;
-  const pointsForNextLevel = (currentLevel * 1000) - totalPointsEarned;
-  const levelProgress = ((totalPointsEarned % 1000) / 1000) * 100;
+  // Handle errors
+  if (profileError || badgesError || debtsError) {
+    console.log('Gamification errors:', { profileError, badgesError, debtsError });
+  }
+  
+  // Use real data from API with fallback to defaults
+  const userProfile = gamificationProfile || {
+    level: 1,
+    experience: 0,
+    experienceToNextLevel: 1000,
+    totalPoints: 0,
+    streakDays: 0,
+    totalPayments: 0,
+    totalPaidOff: 0,
+  };
+  
+  // Use real badges data with fallback to mock data
+  const badges = badgesData || mockBadges;
+  const earnedBadges = badges.filter(badge => badge.earnedAt);
+  const availableBadges = badges.filter(badge => !badge.earnedAt);
+  
+  // Calculate level progress from real data
+  const totalPointsEarned = userProfile.totalPoints;
+  const currentLevel = userProfile.level;
+  const pointsForNextLevel = userProfile.experienceToNextLevel;
+  const levelProgress = userProfile.experienceToNextLevel > 0 ? 
+    ((userProfile.experienceToNextLevel - userProfile.experience) / userProfile.experienceToNextLevel) * 100 : 0;
 
-  const earnedBadges = mockBadges.filter(badge => badge.earnedAt);
-  const availableBadges = mockBadges.filter(badge => !badge.earnedAt);
+  // Show loading state
+  if (profileLoading || badgesLoading || debtsLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading your progress...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (profileError || badgesError || debtsError) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Failed to load progress data</Text>
+          <Text style={styles.errorSubtext}>Please try again later</Text>
+        </View>
+      </View>
+    );
+  }
 
   const getBadgeIcon = (iconName: string) => {
     switch (iconName) {
@@ -350,6 +396,17 @@ export default function GamificationScreen() {
       </ScrollView>
     </View>
   );
+  } catch (error) {
+    console.error('Gamification screen error:', error);
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Something went wrong</Text>
+          <Text style={styles.errorSubtext}>Please try again later</Text>
+        </View>
+      </View>
+    );
+  }
 }
 
 const styles = StyleSheet.create({
@@ -609,5 +666,34 @@ const styles = StyleSheet.create({
     color: COLORS.textLight,
     textAlign: 'center',
     lineHeight: 24,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 18,
+    color: COLORS.text,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
   },
 });

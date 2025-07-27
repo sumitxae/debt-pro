@@ -37,10 +37,10 @@ export class DebtsService {
   }
 
   async create(createDebtDto: CreateDebtDto, userId: string): Promise<Debt> {
-    // Set current balance to original amount for new debts
+    // Use provided current balance or default to original amount
     const debtData = {
       ...createDebtDto,
-      currentBalance: createDebtDto.originalAmount,
+      currentBalance: createDebtDto.currentBalance || createDebtDto.originalAmount,
       user: { id: userId },
     };
 
@@ -72,7 +72,7 @@ export class DebtsService {
 
   async getPaymentHistory(id: string, userId: string) {
     const debt = await this.findOne(id, userId);
-    return this.paymentsService.findByDebt(debt.id);
+    return this.paymentsService.getMonthlyPayments(userId, new Date().getFullYear(), new Date().getMonth() + 1);
   }
 
   async calculatePayoffProjection(id: string, userId: string, monthlyPayment?: number) {

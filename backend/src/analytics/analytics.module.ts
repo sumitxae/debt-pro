@@ -4,10 +4,10 @@ import { AnalyticsController } from './analytics.controller';
 import { AnalyticsService } from './analytics.service';
 import { Debt } from '@/debts/entities/debt.entity';
 import { Payment } from '@/payments/entities/payment.entity';
-import { Budget } from '@/budget/entities/budget.entity';
+import { User } from '@/users/entities/user.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Debt, Payment, Budget])],
+  imports: [TypeOrmModule.forFeature([Debt, Payment, User])],
   controllers: [AnalyticsController],
   providers: [AnalyticsService],
   exports: [AnalyticsService],

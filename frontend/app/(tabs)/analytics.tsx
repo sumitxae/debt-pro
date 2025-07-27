@@ -5,10 +5,11 @@ import {
   StyleSheet,
   ScrollView,
   Dimensions,
+  ActivityIndicator,
 } from 'react-native';
 import { useSelector } from 'react-redux';
 import { RootState } from '@/store';
-import { useGetAnalyticsQuery } from '@/store/api/debtApi';
+import { useGetAnalyticsQuery, useGetDebtsQuery, useGetBudgetQuery } from '@/store/api/debtApi';
 // Victory Native temporarily disabled due to compatibility issues
 import { ChartBar as BarChart3, TrendingDown, TrendingUp, DollarSign, Percent, Calendar } from 'lucide-react-native';
 
@@ -26,58 +27,70 @@ const COLORS = {
   textLight: '#7f8c8d',
 };
 
-// Mock analytics data - would come from backend in real app
-const mockAnalyticsData = {
-  debtToIncomeRatio: 28.5,
-  monthlyPaymentRatio: 15.2,
-  averageInterestRate: 18.7,
-  totalInterestSaved: 2450,
-  projectedPayoffDate: '2026-08-15',
-  progressData: [
-    { month: 'Jan 2024', totalDebt: 25000, paidOff: 0 },
-    { month: 'Feb 2024', totalDebt: 23500, paidOff: 1500 },
-    { month: 'Mar 2024', totalDebt: 22200, paidOff: 2800 },
-    { month: 'Apr 2024', totalDebt: 20800, paidOff: 4200 },
-    { month: 'May 2024', totalDebt: 19500, paidOff: 5500 },
-    { month: 'Jun 2024', totalDebt: 18100, paidOff: 6900 },
-  ],
-  debtBreakdown: [
-    { debt: 'Credit Card 1', balance: 8500, color: COLORS.danger },
-    { debt: 'Credit Card 2', balance: 4200, color: COLORS.warning },
-    { debt: 'Personal Loan', balance: 3800, color: COLORS.primary },
-    { debt: 'Car Loan', balance: 1600, color: COLORS.success },
-  ],
-  monthlyPayments: [
-    { month: 'Jan', minimum: 750, actual: 1200 },
-    { month: 'Feb', minimum: 750, actual: 1350 },
-    { month: 'Mar', minimum: 750, actual: 1100 },
-    { month: 'Apr', minimum: 750, actual: 1400 },
-    { month: 'May', minimum: 750, actual: 1250 },
-    { month: 'Jun', minimum: 750, actual: 1300 },
-  ],
-  interestVsPrincipal: [
-    { month: 'Jan', interest: 320, principal: 880 },
-    { month: 'Feb', interest: 290, principal: 1060 },
-    { month: 'Mar', interest: 275, principal: 825 },
-    { month: 'Apr', interest: 245, principal: 1155 },
-    { month: 'May', interest: 230, principal: 1020 },
-    { month: 'Jun', interest: 210, principal: 1090 },
-  ],
+// Default analytics data structure
+const defaultAnalyticsData = {
+  debtToIncomeRatio: 0,
+  monthlyPaymentRatio: 0,
+  averageInterestRate: 0,
+  totalInterestSaved: 0,
+  projectedPayoffDate: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+  progressData: [],
+  debtBreakdown: [],
+  monthlyPayments: [],
+  interestVsPrincipal: [],
 };
 
 export default function AnalyticsScreen() {
-  const { list: debts } = useSelector((state: RootState) => state.debts);
-  const { monthlyIncome } = useSelector((state: RootState) => state.budget);
+  try {
+    // Add skip option to prevent queries when not authenticated
+    const { data: analyticsData, isLoading: analyticsLoading, error: analyticsError } = useGetAnalyticsQuery(undefined, {
+      skip: false, // We'll handle errors gracefully
+    });
+    const { data: debtsData, isLoading: debtsLoading, error: debtsError } = useGetDebtsQuery(undefined, {
+      skip: false, // We'll handle errors gracefully
+    });
+    const { data: budgetData, isLoading: budgetLoading, error: budgetError } = useGetBudgetQuery(undefined, {
+      skip: false, // We'll handle errors gracefully
+    });
   
-  const { data: analyticsData, isLoading } = useGetAnalyticsQuery();
+  // Handle errors
+  if (analyticsError || debtsError || budgetError) {
+    console.log('Analytics errors:', { analyticsError, debtsError, budgetError });
+  }
+
+  // Use real data from API with fallback to defaults
+  const data = analyticsData || defaultAnalyticsData;
   
-  // Use mock data for demo - replace with real data from API
-  const data = mockAnalyticsData;
-  
-  const totalDebt = debts.reduce((sum, debt) => sum + debt.balance, 0);
-  const totalOriginalDebt = debts.reduce((sum, debt) => sum + debt.originalAmount, 0);
+  // Calculate totals from real debt data with safe fallbacks
+  const debtsArray = Array.isArray(debtsData) ? debtsData : [];
+  const totalDebt = debtsArray.reduce((sum, debt) => sum + (debt?.balance || 0), 0);
+  const totalOriginalDebt = debtsArray.reduce((sum, debt) => sum + (debt?.originalAmount || 0), 0);
   const totalPaidOff = totalOriginalDebt - totalDebt;
   const payoffPercentage = totalOriginalDebt > 0 ? (totalPaidOff / totalOriginalDebt) * 100 : 0;
+
+  // Show loading state
+  if (analyticsLoading || debtsLoading || budgetLoading) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={COLORS.primary} />
+          <Text style={styles.loadingText}>Loading analytics...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Show error state
+  if (analyticsError || debtsError || budgetError) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Failed to load analytics data</Text>
+          <Text style={styles.errorSubtext}>Please try again later</Text>
+        </View>
+      </View>
+    );
+  }
 
   const getHealthColor = (ratio: number, type: 'debt' | 'payment') => {
     if (type === 'debt') {
@@ -318,6 +331,17 @@ export default function AnalyticsScreen() {
       </ScrollView>
     </View>
   );
+  } catch (error) {
+    console.error('Analytics screen error:', error);
+    return (
+      <View style={styles.container}>
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>Something went wrong</Text>
+          <Text style={styles.errorSubtext}>Please try again later</Text>
+        </View>
+      </View>
+    );
+  }
 }
 
 const styles = StyleSheet.create({
@@ -556,6 +580,35 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   chartPlaceholderSubtext: {
+    fontSize: 14,
+    color: COLORS.textLight,
+    textAlign: 'center',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginTop: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: COLORS.background,
+    padding: 24,
+  },
+  errorText: {
+    fontSize: 18,
+    color: COLORS.text,
+    marginBottom: 12,
+    textAlign: 'center',
+  },
+  errorSubtext: {
     fontSize: 14,
     color: COLORS.textLight,
     textAlign: 'center',

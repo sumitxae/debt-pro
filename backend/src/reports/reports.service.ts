@@ -33,7 +33,7 @@ export class ReportsService {
   }
 
   async generatePaymentHistoryReport(userId: string, months: number = 12) {
-    const payments = await this.paymentsService.findByUser(userId, 100);
+    const payments = await this.paymentsService.getAllPayments(userId, 100);
     const stats = await this.paymentsService.getPaymentStats(userId, months);
     
     return {
@@ -71,7 +71,7 @@ export class ReportsService {
     }
     
     // Payment consistency impact
-    if (paymentStats.totalPayments > 0) {
+    if (paymentStats.paymentCount > 0) {
       healthScore += 15;
     }
     
