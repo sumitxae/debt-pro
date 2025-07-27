@@ -8,10 +8,13 @@ import {
   Alert,
   Switch,
   ActivityIndicator,
+  TextInput,
+  Modal,
 } from 'react-native';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '@/store';
-import { logoutUser, updateUserPreferences } from '@/store/slices/authSlice';
+import { logoutUser, updateUserPreferences, updateUserProfile } from '@/store/slices/authSlice';
+import { useGetDebtsQuery, useGetBudgetQuery } from '@/store/api/debtApi';
 import { formatCurrency, getCurrencySymbol, AVAILABLE_CURRENCIES } from '@/src/utils/currencyUtils';
 import { router } from 'expo-router';
 import { 
@@ -30,6 +33,8 @@ import {
   FileText,
   Info,
   ChevronRight,
+  Edit3,
+  DollarSign,
 } from 'lucide-react-native';
 
 const COLORS = {
@@ -48,9 +53,24 @@ const COLORS = {
 export default function ProfileScreen() {
   const dispatch = useDispatch();
   const { user, isAuthenticated } = useSelector((state: RootState) => state.auth);
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [biometricEnabled, setBiometricEnabled] = useState(false);
+  const { data: debtsData } = useGetDebtsQuery();
+  const { data: budgetData } = useGetBudgetQuery();
+  
   const [loading, setLoading] = useState(false);
+  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [editField, setEditField] = useState<'name' | 'income' | null>(null);
+  const [editValue, setEditValue] = useState('');
+
+  // Calculate real statistics from API data
+  const debts = Array.isArray(debtsData) ? debtsData : [];
+  const totalDebt = debts.reduce((sum, debt) => sum + (debt.balance || 0), 0);
+  const activeDebts = debts.filter(debt => debt.status === 'active').length;
+  const paidOffDebts = debts.filter(debt => debt.status === 'paid').length;
+  const monthlyIncome = budgetData?.monthlyIncome || 0;
+  const availableForDebt = budgetData ? 
+    (Number(budgetData.monthlyIncome) || 0) - Object.values(budgetData.expenses || {}).reduce((sum, exp) => sum + (Number(exp) || 0), 0) : 0;
+
+  const userCurrency = user?.preferences?.currency || 'USD';
 
   const handleLogout = async () => {
     Alert.alert(
@@ -68,7 +88,6 @@ export default function ProfileScreen() {
               router.replace('/auth/login');
             } catch (error) {
               console.error('Logout error:', error);
-              // Even if logout fails, clear the state and redirect
               router.replace('/auth/login');
             } finally {
               setLoading(false);
@@ -79,39 +98,48 @@ export default function ProfileScreen() {
     );
   };
 
-  if (loading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-        <Text style={styles.loadingText}>Logging out...</Text>
-      </View>
-    );
-  }
-
-  const handleDeleteAccount = () => {
-    Alert.alert(
-      'Delete Account',
-      'This action cannot be undone. All your data will be permanently deleted.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            Alert.alert('Info', 'Account deletion will be implemented');
-          },
-        },
-      ]
-    );
+  const handleEditProfile = (field: 'name' | 'income') => {
+    setEditField(field);
+    if (field === 'name') {
+      setEditValue(`${user?.firstName || ''} ${user?.lastName || ''}`.trim());
+    } else if (field === 'income') {
+      setEditValue(monthlyIncome.toString());
+    }
+    setEditModalVisible(true);
   };
 
-  const handleExportData = () => {
-    setLoading(true);
-    // Simulate export process
-    setTimeout(() => {
+  const handleSaveEdit = async () => {
+    if (!editField || !editValue.trim()) return;
+
+    try {
+      setLoading(true);
+      
+      if (editField === 'name') {
+        const [firstName, ...lastNameParts] = editValue.trim().split(' ');
+        const lastName = lastNameParts.join(' ');
+        
+        await dispatch(updateUserProfile({
+          firstName: firstName || '',
+          lastName: lastName || '',
+        }) as any);
+      } else if (editField === 'income') {
+        const income = parseFloat(editValue);
+        if (!isNaN(income) && income >= 0) {
+          await dispatch(updateUserProfile({
+            monthlyIncome: income,
+          }) as any);
+        }
+      }
+      
+      setEditModalVisible(false);
+      setEditField(null);
+      setEditValue('');
+      Alert.alert('Success', 'Profile updated successfully!');
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update profile');
+    } finally {
       setLoading(false);
-      Alert.alert('Export Complete', 'Your data has been exported successfully!');
-    }, 2000);
+    }
   };
 
   const handleCurrencyChange = () => {
@@ -134,62 +162,30 @@ export default function ProfileScreen() {
     );
   };
 
-  const menuItems = [
-    {
-      title: 'Account Settings',
-      icon: User,
-      onPress: () => Alert.alert('Info', 'Account settings will be implemented'),
-    },
-    {
-      title: 'Currency',
-      subtitle: `${getCurrencySymbol(user?.preferences?.currency || 'USD')} ${user?.preferences?.currency || 'USD'}`,
-      icon: CreditCard,
-      onPress: handleCurrencyChange,
-    },
-    {
-      title: 'Notifications',
-      icon: Bell,
-      onPress: () => Alert.alert('Info', 'Notification settings will be implemented'),
-    },
-    {
-      title: 'Security & Privacy',
-      icon: Shield,
-      onPress: () => Alert.alert('Info', 'Security settings will be implemented'),
-    },
-    {
-      title: 'Export Data',
-      icon: Download,
-      onPress: handleExportData,
-    },
-    {
-      title: 'Help & Support',
-      icon: HelpCircle,
-      onPress: () => Alert.alert('Info', 'Help & support will be implemented'),
-    },
-    {
-      title: 'About',
-      icon: Info,
-      onPress: () => Alert.alert('About', 'DebtFree Pro v1.0.0\n\nA comprehensive debt management app to help you achieve financial freedom.'),
-    },
-  ];
+  const handleNotificationToggle = async (enabled: boolean) => {
+    try {
+      await dispatch(updateUserPreferences({ notifications: enabled }) as any);
+    } catch (error) {
+      Alert.alert('Error', 'Failed to update notification preference');
+    }
+  };
 
-  const quickActions = [
-    {
-      title: 'Add New Debt',
-      icon: CreditCard,
-      onPress: () => router.push('/debts/add'),
-    },
-    {
-      title: 'Record Payment',
-      icon: TrendingUp,
-      onPress: () => router.push('/payments/record'),
-    },
-    {
-      title: 'View Reports',
-      icon: FileText,
-      onPress: () => Alert.alert('Info', 'Reports will be implemented'),
-    },
-  ];
+  const handleExportData = () => {
+    setLoading(true);
+    setTimeout(() => {
+      setLoading(false);
+      Alert.alert('Export Complete', 'Your data has been exported successfully!');
+    }, 2000);
+  };
+
+  if (loading) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color={COLORS.primary} />
+        <Text style={styles.loadingText}>Updating...</Text>
+      </View>
+    );
+  }
 
   if (!isAuthenticated) {
     return (
@@ -216,9 +212,7 @@ export default function ProfileScreen() {
           <ArrowLeft size={24} color={COLORS.text} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Profile</Text>
-        <TouchableOpacity style={styles.settingsButton}>
-          <Settings size={20} color={COLORS.primary} />
-        </TouchableOpacity>
+        <View style={{ width: 40 }} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -227,13 +221,56 @@ export default function ProfileScreen() {
           <View style={styles.userCard}>
             <View style={styles.userAvatar}>
               <Text style={styles.avatarText}>
-                {user?.name?.charAt(0)?.toUpperCase() || 'U'}
+                {user?.firstName?.charAt(0)?.toUpperCase() || 'U'}
               </Text>
             </View>
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{user?.name || 'User'}</Text>
+              <View style={styles.userNameRow}>
+                <Text style={styles.userName}>
+                  {user?.firstName && user?.lastName 
+                    ? `${user.firstName} ${user.lastName}` 
+                    : user?.email?.split('@')[0] || 'User'}
+                </Text>
+                <TouchableOpacity onPress={() => handleEditProfile('name')}>
+                  <Edit3 size={16} color={COLORS.primary} />
+                </TouchableOpacity>
+              </View>
               <Text style={styles.userEmail}>{user?.email || 'user@example.com'}</Text>
-              <Text style={styles.userStatus}>Active Account</Text>
+              <View style={styles.userIncomeRow}>
+                <Text style={styles.userIncome}>
+                  Monthly Income: {formatCurrency(monthlyIncome, userCurrency)}
+                </Text>
+                <TouchableOpacity onPress={() => handleEditProfile('income')}>
+                  <Edit3 size={14} color={COLORS.primary} />
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+
+          {/* Financial Overview */}
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Financial Overview</Text>
+            <View style={styles.overviewGrid}>
+              <View style={styles.overviewCard}>
+                <CreditCard size={24} color={COLORS.danger} />
+                <Text style={styles.overviewValue}>{formatCurrency(totalDebt, userCurrency)}</Text>
+                <Text style={styles.overviewLabel}>Total Debt</Text>
+              </View>
+              <View style={styles.overviewCard}>
+                <TrendingUp size={24} color={COLORS.success} />
+                <Text style={styles.overviewValue}>{formatCurrency(availableForDebt, userCurrency)}</Text>
+                <Text style={styles.overviewLabel}>Available for Debt</Text>
+              </View>
+              <View style={styles.overviewCard}>
+                <FileText size={24} color={COLORS.primary} />
+                <Text style={styles.overviewValue}>{activeDebts}</Text>
+                <Text style={styles.overviewLabel}>Active Debts</Text>
+              </View>
+              <View style={styles.overviewCard}>
+                <TrendingUp size={24} color={COLORS.warning} />
+                <Text style={styles.overviewValue}>{paidOffDebts}</Text>
+                <Text style={styles.overviewLabel}>Paid Off</Text>
+              </View>
             </View>
           </View>
 
@@ -241,19 +278,27 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Quick Actions</Text>
             <View style={styles.quickActionsGrid}>
-              {quickActions.map((action, index) => {
-                const IconComponent = action.icon;
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.quickActionCard}
-                    onPress={action.onPress}
-                  >
-                    <IconComponent size={24} color={COLORS.primary} />
-                    <Text style={styles.quickActionText}>{action.title}</Text>
-                  </TouchableOpacity>
-                );
-              })}
+              <TouchableOpacity
+                style={styles.quickActionCard}
+                onPress={() => router.push('/debts/add')}
+              >
+                <CreditCard size={24} color={COLORS.primary} />
+                <Text style={styles.quickActionText}>Add Debt</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.quickActionCard}
+                onPress={() => router.push('/payments/record')}
+              >
+                <DollarSign size={24} color={COLORS.success} />
+                <Text style={styles.quickActionText}>Record Payment</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.quickActionCard}
+                onPress={() => router.push('/budget/manage')}
+              >
+                <Settings size={24} color={COLORS.warning} />
+                <Text style={styles.quickActionText}>Manage Budget</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -261,65 +306,53 @@ export default function ProfileScreen() {
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Settings</Text>
             <View style={styles.settingsCard}>
-              {menuItems.map((item, index) => {
-                const IconComponent = item.icon;
-                return (
-                  <TouchableOpacity
-                    key={index}
-                    style={styles.menuItem}
-                    onPress={item.onPress}
-                  >
-                    <View style={styles.menuItemLeft}>
-                      <IconComponent size={20} color={COLORS.textLight} />
-                      <View style={styles.menuItemTextContainer}>
-                        <Text style={styles.menuItemText}>{item.title}</Text>
-                        {item.subtitle && (
-                          <Text style={styles.menuItemSubtitle}>{item.subtitle}</Text>
-                        )}
-                      </View>
-                    </View>
-                    <ChevronRight size={20} color={COLORS.textLight} />
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
+              <TouchableOpacity style={styles.menuItem} onPress={handleCurrencyChange}>
+                <View style={styles.menuItemLeft}>
+                  <CreditCard size={20} color={COLORS.textLight} />
+                  <View style={styles.menuItemTextContainer}>
+                    <Text style={styles.menuItemText}>Currency</Text>
+                    <Text style={styles.menuItemSubtitle}>
+                      {getCurrencySymbol(userCurrency)} {userCurrency}
+                    </Text>
+                  </View>
+                </View>
+                <ChevronRight size={20} color={COLORS.textLight} />
+              </TouchableOpacity>
 
-          {/* Toggle Settings */}
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Preferences</Text>
-            <View style={styles.settingsCard}>
               <View style={styles.toggleItem}>
                 <View style={styles.toggleItemLeft}>
                   <Bell size={20} color={COLORS.textLight} />
                   <View style={styles.toggleTextContainer}>
                     <Text style={styles.toggleTitle}>Push Notifications</Text>
-                    <Text style={styles.toggleSubtitle}>Receive payment reminders and updates</Text>
+                    <Text style={styles.toggleSubtitle}>Receive payment reminders</Text>
                   </View>
                 </View>
                 <Switch
-                  value={notificationsEnabled}
-                  onValueChange={setNotificationsEnabled}
+                  value={user?.preferences?.notifications ?? true}
+                  onValueChange={handleNotificationToggle}
                   trackColor={{ false: COLORS.lightGray, true: COLORS.primary }}
                   thumbColor={COLORS.white}
                 />
               </View>
-              
-              <View style={styles.toggleItem}>
-                <View style={styles.toggleItemLeft}>
-                  <Shield size={20} color={COLORS.textLight} />
-                  <View style={styles.toggleTextContainer}>
-                    <Text style={styles.toggleTitle}>Biometric Login</Text>
-                    <Text style={styles.toggleSubtitle}>Use fingerprint or face ID</Text>
-                  </View>
+
+              <TouchableOpacity style={styles.menuItem} onPress={handleExportData}>
+                <View style={styles.menuItemLeft}>
+                  <Download size={20} color={COLORS.textLight} />
+                  <Text style={styles.menuItemText}>Export Data</Text>
                 </View>
-                <Switch
-                  value={biometricEnabled}
-                  onValueChange={setBiometricEnabled}
-                  trackColor={{ false: COLORS.lightGray, true: COLORS.primary }}
-                  thumbColor={COLORS.white}
-                />
-              </View>
+                <ChevronRight size={20} color={COLORS.textLight} />
+              </TouchableOpacity>
+
+              <TouchableOpacity 
+                style={styles.menuItem} 
+                onPress={() => Alert.alert('Help', 'Help & support will be implemented')}
+              >
+                <View style={styles.menuItemLeft}>
+                  <HelpCircle size={20} color={COLORS.textLight} />
+                  <Text style={styles.menuItemText}>Help & Support</Text>
+                </View>
+                <ChevronRight size={20} color={COLORS.textLight} />
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -331,14 +364,6 @@ export default function ProfileScreen() {
                 <View style={styles.menuItemLeft}>
                   <LogOut size={20} color={COLORS.warning} />
                   <Text style={[styles.menuItemText, { color: COLORS.warning }]}>Logout</Text>
-                </View>
-                <ChevronRight size={20} color={COLORS.textLight} />
-              </TouchableOpacity>
-              
-              <TouchableOpacity style={styles.dangerMenuItem} onPress={handleDeleteAccount}>
-                <View style={styles.menuItemLeft}>
-                  <Trash2 size={20} color={COLORS.danger} />
-                  <Text style={[styles.menuItemText, { color: COLORS.danger }]}>Delete Account</Text>
                 </View>
                 <ChevronRight size={20} color={COLORS.textLight} />
               </TouchableOpacity>
@@ -358,15 +383,49 @@ export default function ProfileScreen() {
         </View>
       </ScrollView>
 
-      {/* Loading Overlay */}
-      {loading && (
-        <View style={styles.loadingOverlay}>
-          <View style={styles.loadingCard}>
-            <ActivityIndicator size="large" color={COLORS.primary} />
-            <Text style={styles.loadingText}>Exporting your data...</Text>
+      {/* Edit Modal */}
+      <Modal
+        visible={editModalVisible}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEditModalVisible(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>
+              Edit {editField === 'name' ? 'Name' : 'Monthly Income'}
+            </Text>
+            
+            <TextInput
+              style={styles.modalInput}
+              value={editValue}
+              onChangeText={setEditValue}
+              placeholder={editField === 'name' ? 'Enter your name' : 'Enter monthly income'}
+              keyboardType={editField === 'income' ? 'numeric' : 'default'}
+              autoFocus
+            />
+
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setEditModalVisible(false);
+                  setEditField(null);
+                  setEditValue('');
+                }}
+              >
+                <Text style={styles.cancelButtonText}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.saveButton}
+                onPress={handleSaveEdit}
+              >
+                <Text style={styles.saveButtonText}>Save</Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
-      )}
+      </Modal>
     </View>
   );
 }
@@ -393,9 +452,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.text,
-  },
-  settingsButton: {
-    padding: 8,
   },
   scrollView: {
     flex: 1,
@@ -433,21 +489,33 @@ const styles = StyleSheet.create({
   userInfo: {
     flex: 1,
   },
+  userNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 4,
+  },
   userName: {
     fontSize: 20,
     fontWeight: 'bold',
     color: COLORS.text,
-    marginBottom: 4,
+    flex: 1,
   },
   userEmail: {
     fontSize: 14,
     color: COLORS.textLight,
-    marginBottom: 4,
+    marginBottom: 8,
   },
-  userStatus: {
-    fontSize: 12,
+  userIncomeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  userIncome: {
+    fontSize: 14,
     color: COLORS.success,
     fontWeight: '600',
+    flex: 1,
   },
   section: {
     marginBottom: 24,
@@ -457,6 +525,36 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORS.text,
     marginBottom: 16,
+  },
+  overviewGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  overviewCard: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+  },
+  overviewValue: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  overviewLabel: {
+    fontSize: 12,
+    color: COLORS.textLight,
+    textAlign: 'center',
   },
   quickActionsGrid: {
     flexDirection: 'row',
@@ -502,6 +600,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+    flex: 1,
   },
   menuItemTextContainer: {
     flex: 1,
@@ -520,8 +619,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: COLORS.lightGray,
   },
   toggleItem: {
     flexDirection: 'row',
@@ -606,32 +703,73 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: COLORS.white,
   },
-  loadingOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  loadingCard: {
-    backgroundColor: COLORS.white,
-    borderRadius: 16,
-    padding: 32,
-    alignItems: 'center',
-    margin: 24,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: COLORS.text,
-    marginTop: 16,
-  },
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: COLORS.background,
   },
-}); 
+  loadingText: {
+    fontSize: 16,
+    color: COLORS.text,
+    marginTop: 16,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    backgroundColor: COLORS.white,
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: COLORS.text,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalInput: {
+    borderWidth: 2,
+    borderColor: COLORS.lightGray,
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    marginBottom: 24,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  cancelButton: {
+    flex: 1,
+    paddingVertical: 16,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: COLORS.gray,
+    alignItems: 'center',
+  },
+  cancelButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.gray,
+  },
+  saveButton: {
+    flex: 1,
+    backgroundColor: COLORS.primary,
+    paddingVertical: 16,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  saveButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORS.white,
+  },
+});

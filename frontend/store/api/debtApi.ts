@@ -342,6 +342,31 @@ export const debtApi = createApi({
       providesTags: ['Payment'],
     }),
 
+    getUserProfile: builder.query<any, void>({
+      query: () => '/users/profile',
+      transformResponse: (response: any) => {
+        // Handle API response structure - backend returns { success: true, data: {...}, timestamp: ... }
+        return response?.data || {};
+      },
+      providesTags: ['User'],
+    }),
+    updateUserProfile: builder.mutation<any, Partial<any>>({
+      query: (userData) => ({
+        url: '/users/profile',
+        method: 'PUT',
+        body: userData,
+      }),
+      invalidatesTags: ['User'],
+    }),
+    updateUserPreferences: builder.mutation<any, Partial<any>>({
+      query: (preferences) => ({
+        url: '/users/preferences',
+        method: 'PUT',
+        body: preferences,
+      }),
+      invalidatesTags: ['User'],
+    }),
+
     // Reports
     getDebtSummary: builder.query<any, void>({
       query: () => '/reports/debt-summary',
@@ -365,6 +390,9 @@ export const debtApi = createApi({
 export const {
   useLoginMutation,
   useRegisterMutation,
+  useGetUserProfileQuery,
+  useUpdateUserProfileMutation,
+  useUpdateUserPreferencesMutation,
   useGetDebtsQuery,
   useCreateDebtMutation,
   useUpdateDebtMutation,
