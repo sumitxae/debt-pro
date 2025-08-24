@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Debt Snowball Tracker</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #3498db 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            font-weight: 700;
+        }
+        
+        .header p {
+            font-size: 1.2em;
+            opacity: 0.9;
+        }
+        
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr;
+            gap: 20px;
+            padding: 30px;
+            background: #f8f9fa;
+        }
+        
+        .metric-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+        
+        .metric-value {
+            font-size: 2.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .metric-label {
+            color: #666;
+            font-size: 0.95em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .total-debt { color: #e74c3c; }
+        .monthly-payment { color: #3498db; }
+        .debt-count { color: #9b59b6; }
+        .avg-interest { color: #f39c12; }
+        
+        .main-content {
+            display: grid;
+            grid-template-columns: 2fr 1fr;
+            gap: 30px;
+            padding: 0 30px 30px;
+        }
+        
+        .debt-table-container {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+            overflow: hidden;
+        }
+        
+        .table-header {
+            background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
+            color: white;
+            padding: 20px;
+            font-size: 1.3em;
+            font-weight: 600;
+        }
+        
+        .debt-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        .debt-table th,
+        .debt-table td {
+            padding: 15px;
+            text-align: left;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .debt-table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .debt-table tr:hover {
+            background: #f8f9fa;
+        }
+        
+        .debt-name {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .balance {
+            font-weight: bold;
+            color: #e74c3c;
+        }
+        
+        .payment {
+            color: #27ae60;
+            font-weight: 600;
+        }
+        
+        .interest-rate {
+            color: #f39c12;
+            font-weight: 600;
+        }
+        
+        .priority {
+            background: #3498db;
+            color: white;
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: 600;
+        }
+        
+        .charts-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+        
+        .chart-card {
+            background: white;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+            padding: 20px;
+        }
+        
+        .chart-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        
+        .progress-section {
+            background: white;
+            margin: 30px;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+        }
+        
+        .progress-header {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .progress-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 15px;
+            margin-bottom: 15px;
+            background: #f8f9fa;
+            border-radius: 10px;
+            border-left: 5px solid #3498db;
+        }
+        
+        .progress-info {
+            flex: 1;
+        }
+        
+        .progress-name {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 5px;
+        }
+        
+        .progress-details {
+            color: #666;
+            font-size: 0.9em;
+        }
+        
+        .progress-bar-container {
+            width: 200px;
+            height: 8px;
+            background: #e0e0e0;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+        
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #3498db, #2ecc71);
+            border-radius: 4px;
+            transition: width 0.3s ease;
+        }
+        
+        .input-section {
+            background: white;
+            margin: 30px;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+        }
+        
+        .input-header {
+            font-size: 1.5em;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .input-group {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .input-group label {
+            font-weight: 600;
+            color: #2c3e50;
+            min-width: 150px;
+        }
+        
+        .input-group input {
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+            flex: 1;
+            min-width: 200px;
+        }
+        
+        .input-group input:focus {
+            outline: none;
+            border-color: #3498db;
+        }
+        
+        .btn {
+            background: linear-gradient(135deg, #3498db, #2ecc71);
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            border-radius: 8px;
+            font-size: 1.1em;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.3s ease;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        @media (max-width: 1200px) {
+            .dashboard {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .main-content {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+            }
+            
+            .input-group {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            
+            .input-group label {
+                min-width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Debt Snowball Tracker</h1>
+            <p>Your path to financial freedom - one debt at a time!</p>
+        </div>
+        
+        <div class="dashboard">
+            <div class="metric-card">
+                <div class="metric-value total-debt" id="totalDebt">₹11,57,300</div>
+                <div class="metric-label">Total Debt</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value monthly-payment" id="totalPayment">₹25,100</div>
+                <div class="metric-label">Monthly Payment</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value debt-count" id="debtCount">6</div>
+                <div class="metric-label">Active Debts</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value avg-interest" id="avgInterest">7.7%</div>
+                <div class="metric-label">Avg Interest Rate</div>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="debt-table-container">
+                <div class="table-header">📊 Debt Snowball Order (Smallest to Largest)</div>
+                <table class="debt-table">
+                    <thead>
+                        <tr>
+                            <th>Priority</th>
+                            <th>Debt Name</th>
+                            <th>Balance</th>
+                            <th>Min Payment</th>
+                            <th>Interest Rate</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="debtTableBody">
+                        <tr>
+                            <td><span class="priority">1st</span></td>
+                            <td class="debt-name">Relative (Interest-free)</td>
+                            <td class="balance">₹10,000</td>
+                            <td class="payment">₹0</td>
+                            <td class="interest-rate">0%</td>
+                            <td>🎯 FOCUS HERE</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority">2nd</span></td>
+                            <td class="debt-name">Slice Card</td>
+                            <td class="balance">₹8,300</td>
+                            <td class="payment">₹3,300</td>
+                            <td class="interest-rate">27%</td>
+                            <td>Next Target</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority">3rd</span></td>
+                            <td class="debt-name">Relatives (Low Interest)</td>
+                            <td class="balance">₹15,000</td>
+                            <td class="payment">₹0</td>
+                            <td class="interest-rate">1.5%</td>
+                            <td>Waiting</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority">4th</span></td>
+                            <td class="debt-name">Laptop Loan</td>
+                            <td class="balance">₹1,24,000</td>
+                            <td class="payment">₹9,800</td>
+                            <td class="interest-rate">0%</td>
+                            <td>Waiting</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority">5th</span></td>
+                            <td class="debt-name">Home Loan</td>
+                            <td class="balance">₹5,00,000</td>
+                            <td class="payment">₹6,000</td>
+                            <td class="interest-rate">9.85%</td>
+                            <td>Waiting</td>
+                        </tr>
+                        <tr>
+                            <td><span class="priority">6th</span></td>
+                            <td class="debt-name">KCC Loan</td>
+                            <td class="balance">₹5,00,000</td>
+                            <td class="payment">₹6,000</td>
+                            <td class="interest-rate">9.85%</td>
+                            <td>Waiting</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            
+            <div class="charts-container">
+                <div class="chart-card">
+                    <div class="chart-title">Debt Distribution</div>
+                    <canvas id="debtChart" width="300" height="300"></canvas>
+                </div>
+                
+                <div class="chart-card">
+                    <div class="chart-title">Interest Rate Comparison</div>
+                    <canvas id="interestChart" width="300" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="progress-section">
+            <div class="progress-header">🎯 Current Focus: Relative (Interest-free) - ₹10,000</div>
+            <div class="progress-item">
+                <div class="progress-info">
+                    <div class="progress-name">Next Payment Strategy</div>
+                    <div class="progress-details">Pay off this ₹10,000 debt completely first, then roll that payment power to Slice Card</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-details">0% Complete - Start attacking this debt!</div>
+                </div>
+            </div>
+            
+            <div class="progress-item">
+                <div class="progress-info">
+                    <div class="progress-name">After First Debt is Gone</div>
+                    <div class="progress-details">Focus all extra payments on Slice Card (₹8,300 at 27% interest)</div>
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" style="width: 0%"></div>
+                    </div>
+                    <div class="progress-details">High interest - eliminate quickly!</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="input-section">
+            <div class="input-header">💪 Make a Payment & Update Progress</div>
+            <div class="input-group">
+                <label for="paymentDebt">Select Debt:</label>
+                <select id="paymentDebt" style="padding: 12px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 1em; flex: 1; min-width: 200px;">
+                    <option value="relative1">Relative (Interest-free) - ₹10,000</option>
+                    <option value="slice">Slice Card - ₹8,300</option>
+                    <option value="relative2">Relatives (Low Interest) - ₹15,000</option>
+                    <option value="laptop">Laptop Loan - ₹1,24,000</option>
+                    <option value="home">Home Loan - ₹5,00,000</option>
+                    <option value="kcc">KCC Loan - ₹5,00,000</option>
+                </select>
+            </div>
+            <div class="input-group">
+                <label for="paymentAmount">Payment Amount:</label>
+                <input type="number" id="paymentAmount" placeholder="Enter payment amount">
+            </div>
+            <div class="input-group">
+                <label for="extraAmount">Extra Amount Available:</label>
+                <input type="number" id="extraAmount" placeholder="Any extra money for debt?">
+            </div>
+            <div class="input-group">
+                <button class="btn" onclick="makePayment()">Record Payment & Update</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize debt data
+        let debts = {
+            relative1: { name: "Relative (Interest-free)", balance: 10000, minPayment: 0, rate: 0 },
+            slice: { name: "Slice Card", balance: 8300, minPayment: 3300, rate: 27 },
+            relative2: { name: "Relatives (Low Interest)", balance: 15000, minPayment: 0, rate: 1.5 },
+            laptop: { name: "Laptop Loan", balance: 124000, minPayment: 9800, rate: 0 },
+            home: { name: "Home Loan", balance: 500000, minPayment: 6000, rate: 9.85 },
+            kcc: { name: "KCC Loan", balance: 500000, minPayment: 6000, rate: 9.85 }
+        };
+
+        // Create debt distribution chart
+        const ctx1 = document.getElementById('debtChart').getContext('2d');
+        new Chart(ctx1, {
+            type: 'doughnut',
+            data: {
+                labels: ['Relative (₹10K)', 'Slice (₹8K)', 'Relatives (₹15K)', 'Laptop (₹124K)', 'Home (₹500K)', 'KCC (₹500K)'],
+                datasets: [{
+                    data: [10000, 8300, 15000, 124000, 500000, 500000],
+                    backgroundColor: [
+                        '#3498db', '#e74c3c', '#f39c12', '#9b59b6', '#2ecc71', '#95a5a6'
+                    ],
+                    borderWidth: 3,
+                    borderColor: '#fff'
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: {
+                            padding: 15,
+                            usePointStyle: true
+                        }
+                    }
+                }
+            }
+        });
+
+        // Create interest rate comparison chart
+        const ctx2 = document.getElementById('interestChart').getContext('2d');
+        new Chart(ctx2, {
+            type: 'bar',
+            data: {
+                labels: ['Relative', 'Laptop', 'Relatives', 'Home', 'KCC', 'Slice'],
+                datasets: [{
+                    label: 'Interest Rate (%)',
+                    data: [0, 0, 1.5, 9.85, 9.85, 27],
+                    backgroundColor: [
+                        '#2ecc71', '#2ecc71', '#3498db', '#f39c12', '#f39c12', '#e74c3c'
+                    ],
+                    borderRadius: 8,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            callback: function(value) {
+                                return value + '%';
+                            }
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                }
+            }
+        });
+
+        function makePayment() {
+            const debtKey = document.getElementById('paymentDebt').value;
+            const paymentAmount = parseFloat(document.getElementById('paymentAmount').value);
+            const extraAmount = parseFloat(document.getElementById('extraAmount').value) || 0;
+            
+            if (!paymentAmount || paymentAmount <= 0) {
+                alert('Please enter a valid payment amount');
+                return;
+            }
+            
+            const totalPayment = paymentAmount + extraAmount;
+            
+            if (debts[debtKey].balance >= totalPayment) {
+                debts[debtKey].balance -= totalPayment;
+            } else {
+                debts[debtKey].balance = 0;
+            }
+            
+            // Update display
+            updateDisplay();
+            
+            // Show success message
+            alert(`Payment of ₹${totalPayment.toLocaleString()} recorded for ${debts[debtKey].name}!\nRemaining balance: ₹${debts[debtKey].balance.toLocaleString()}`);
+            
+            // Clear inputs
+            document.getElementById('paymentAmount').value = '';
+            document.getElementById('extraAmount').value = '';
+        }
+
+        function updateDisplay() {
+            // Update metrics
+            const totalDebt = Object.values(debts).reduce((sum, debt) => sum + debt.balance, 0);
+            const totalPayment = Object.values(debts).reduce((sum, debt) => sum + debt.minPayment, 0);
+            const activeDebts = Object.values(debts).filter(debt => debt.balance > 0).length;
+            
+            document.getElementById('totalDebt').textContent = `₹${totalDebt.toLocaleString()}`;
+            document.getElementById('totalPayment').textContent = `₹${totalPayment.toLocaleString()}`;
+            document.getElementById('debtCount').textContent = activeDebts;
+            
+            // Update table
+            updateDebtTable();
+        }
+
+        function updateDebtTable() {
+            const tableBody = document.getElementById('debtTableBody');
+            const sortedDebts = Object.entries(debts)
+                .filter(([key, debt]) => debt.balance > 0)
+                .sort(([,a], [,b]) => a.balance - b.balance);
+            
+            tableBody.innerHTML = '';
+            
+            sortedDebts.forEach(([key, debt], index) => {
+                const row = document.createElement('tr');
+                const priority = index === 0 ? '🎯 FOCUS HERE' : index === 1 ? 'Next Target' : 'Waiting';
+                const priorityClass = index === 0 ? '1st' : index === 1 ? '2nd' : `${index + 1}th`;
+                
+                row.innerHTML = `
+                    <td><span class="priority">${priorityClass}</span></td>
+                    <td class="debt-name">${debt.name}</td>
+                    <td class="balance">₹${debt.balance.toLocaleString()}</td>
+                    <td class="payment">₹${debt.minPayment.toLocaleString()}</td>
+                    <td class="interest-rate">${debt.rate}%</td>
+                    <td>${priority}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Initialize display
+        updateDisplay();
+    </script>
+</body>
+</html>
